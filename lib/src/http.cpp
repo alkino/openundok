@@ -37,9 +37,9 @@ Result<std::string> HTTP::get(NodeId nodeId) {
   return impl_->get(std::format("/fsapi/GET/{}", node.name));
 }
 
-void HTTP::set(NodeId nodeId, const std::string& value) {
+Result<std::string> HTTP::set(NodeId nodeId, const std::string& value) {
   const Node& node = nodes[nodeId];
-  impl_->get(std::format("/fsapi/SET/{}", node.name), value);
+  return impl_->get(std::format("/fsapi/SET/{}", node.name), value);
 }
 
 

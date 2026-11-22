@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <string_view>
 
 #include "transport.hpp"
 #include "node.hpp"
@@ -26,9 +25,8 @@ class Client {
         .transform([](uint8_t v){return v != 0;});
     }
 
-    bool on() {
-      transport.set(NETREMOTE_SYS_POWER, "1");
-      return true;
+    Result<void> power(bool on) {
+      return transport.set(NETREMOTE_SYS_POWER, on ? "1" : "0");
     }
 
   private:

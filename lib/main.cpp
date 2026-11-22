@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "client.hpp"
+#include <openundok/client.hpp>
 
 int main() {
   Client client("192.168.1.12");
@@ -8,7 +8,9 @@ int main() {
   if (is_on) {
     std::cout << client.is_on().value() << std::endl;
     if (!(is_on.value())) {
-      client.on();
+      if (auto result = client.power(true); !result) {
+        std::cerr << result.error() << std::endl;
+      }
     }
   } else {
     std::cout << is_on.error() << std::endl;

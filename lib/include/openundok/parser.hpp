@@ -8,14 +8,22 @@
 
 class Parser {
   public:
-    Parser() {}
+    ~Parser();
+    Parser(Parser&&);
 
-    Result<Value> parse_answer(const std::string& body, NodeType type);
+    static Result<Parser> load(const std::string& body);
+
+    Result<void> parse_status();
+    Result<Value> parse_value(NodeType type);
+
   private:
-    Result<Value> parse_value(NodeType type, std::string_view text);
+    struct Impl;
+    explicit Parser(std::unique_ptr<Impl> impl);
 
     template <typename T>
     Result<Value> parse_number(std::string_view text);
+
+    std::unique_ptr<Impl> impl_;
 };
 
 // vim: set ts=2 sw=2 sts=2 et:

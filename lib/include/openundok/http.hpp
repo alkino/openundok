@@ -13,7 +13,7 @@ class HTTP {
     ~HTTP();
 
     Result<std::string> get(NodeId node);
-    void set(NodeId node, const std::string& value);
+    Result<std::string> set(NodeId node, const std::string& value);
 
   private:
     struct Impl;

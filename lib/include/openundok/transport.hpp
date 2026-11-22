@@ -22,19 +22,34 @@ class Transport {
     {}
 
     Result<Value> get(NodeId id) {
-      const Node& node = nodes.at(id);
-
       auto body = http.get(id);
       if (!body) {
         return std::unexpected(body.error());
       }
 
-      Parser parser{};
-      return parser.parse_answer(*body, node.type);
+      auto loaded = Parser::load(*body);
+      if (!loaded) {
+        return std::unexpected(std::move(loaded.error()));
+      }
+      Parser parser = std::move(*loaded);
+
+      if (auto r = parser.parse_status(); !r) {
+        return std::unexpected(std::move(r.error()));
+      }
+
+      const Node& node = nodes.at(id);
+      return parser.parse_value(node.type);
     }
 
-    void set(NodeId id, std::string v) {
-      http.set(id, v);
+    Result<void> set(NodeId id, std::string v) {
+      auto body = http.set(id, v);
+      auto loaded = Parser::load(*body);
+      if (!loaded) {
+        return std::unexpected(std::move(loaded.error()));
+      }
+      Parser parser = std::move(*loaded);
+
+      return parser.parse_status();
     }
 
   private:
