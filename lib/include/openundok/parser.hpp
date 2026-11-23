@@ -13,8 +13,10 @@ class Parser {
 
     static Result<Parser> load(const std::string& body);
 
-    Result<void> parse_status();
-    Result<Value> parse_value(NodeType type);
+    Result<void> parse_set();
+    Result<Scalar> parse_get(NodeType type);
+    Result<List> parse_list(NodeId id);
+    Result<MultipleValue> parse_multiple();
 
   private:
     struct Impl;
