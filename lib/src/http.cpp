@@ -48,6 +48,11 @@ Result<std::string> HTTP::list_get_next(ListId nodeId, size_t length, std::optio
   return impl_->get(std::format("/fsapi/LIST_GET_NEXT/{}/{}", node.name, start ? std::format("{}", *start) : std::string("-1")), {{"maxItems", std::format("{}", length)}});
 }
 
+Result<std::string> HTTP::list_get(ListId nodeId, uint32_t slot) {
+  const auto& node = list_nodes[nodeId];
+  return impl_->get(std::format("/fsapi/LIST_GET/{}/{}", node.name, slot));
+}
+
 Result<std::string> HTTP::get_multiple(std::span<const ScalarId> ids) {
   std::vector<std::pair<std::string, std::string>> params{};
   for (auto id: ids) {

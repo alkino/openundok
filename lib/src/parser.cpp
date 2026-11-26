@@ -77,7 +77,7 @@ struct Parser::Impl {
     std::unordered_map<std::string, Scalar> fields;
     for (pugi::xml_node field = item.child("field"); field; field = field.next_sibling("field")) {
       if (auto res = parse_field(field, node); res) {
-        fields.insert(res.value());
+        fields.insert(std::move(*res));
       } else {
         return std::unexpected(std::move(res.error()));
       }
@@ -178,6 +178,22 @@ Result<List> Parser::parse_list(ListId id) {
   }
   return impl_->parse_status(response)
     .and_then([&]{ return impl_->parse_list(id, response); });
+}
+
+Result<Page> Parser::parse_page(ListId id) {
+  auto response = impl_->doc.child("fsapiResponse");
+  if (response.empty()) {
+    return std::unexpected("the XML node <fsapiResponse> has not been found");
+  }
+  // TODO: see if we can add this to parse_status directly
+  if (std::string_view(response.child_value("status")) == "FS_LIST_END") {
+    return Page({}, true);
+  }
+  return impl_->parse_status(response)
+    .and_then([&] { return impl_->parse_list(id, response); })
+    .transform([&](List&& items) {
+      return Page{std::move(items), !response.child("listend").empty()};
+  });
 }
 
 Result<MultipleScalar> Parser::parse_multiple() {

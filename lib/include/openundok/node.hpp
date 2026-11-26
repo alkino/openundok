@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <expected>
@@ -14,6 +15,12 @@
 
 enum class NodeType { U8, U32, S32, C8_ARRAY };
 constexpr std::array<std::string_view, 4> xml_tag = {"u8", "u32", "s32", "c8_array"};
+
+template <NodeType> struct cpp_type;
+template <> struct cpp_type<NodeType::U8> { using type = uint8_t; };
+template <> struct cpp_type<NodeType::U32> { using type = uint32_t; };
+template <> struct cpp_type<NodeType::S32> { using type = int32_t; };
+template <> struct cpp_type<NodeType::C8_ARRAY> { using type = std::string; };
 
 struct ScalarNode {
   std::string_view name;
@@ -70,6 +77,9 @@ constexpr auto scalar_nodes =
     {"netRemote.sys.power", NodeType::U8},
   });
 static_assert(scalar_nodes.size() == SCALAR_COUNT);
+
+template <ScalarId id>
+using node_t = cpp_type<scalar_nodes[id].type>::type;
 
 enum ListId {
   NETREMOTE_NAV_PRESETS,
@@ -129,9 +139,40 @@ struct Item {
   std::unordered_map<std::string, Scalar> fields;
 };
 using List = std::vector<Item>;
+struct Page { List items; bool end; };
 
 using MultipleScalar = std::unordered_map<std::string, Scalar>;
 template <typename T>
 using Result = std::expected<T, std::string>;
+
+template <std::size_t N>
+struct fixed_string {
+  char data[N]{};
+  constexpr fixed_string(const char (&s)[N]) { std::copy_n(s, N, data); }
+  constexpr std::string_view view() const { return {data, N - 1}; }
+};
+
+template <ListId id, fixed_string name>
+consteval NodeType field_type() {
+  constexpr auto fields = list_nodes[id].fields;
+  auto it = std::ranges::find(fields, name.view(), &Field::name);
+  if (it == fields.end()) {
+    throw "unknown field for this list";
+  }
+  return it->type;
+}
+
+template <ListId id, fixed_string name>
+using field_t = cpp_type<field_type<id, name>()>::type;
+
+template <ListId id>
+struct ItemView {
+  const Item& item;
+
+  template <fixed_string name>
+  const field_t<id, name>& get() const {
+    return std::get<field_t<id, name>>(item.fields.at(std::string(name.view())));
+  }
+};
 
 // vim: set ts=2 sw=2 sts=2 et:

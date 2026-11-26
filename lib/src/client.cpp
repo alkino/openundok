@@ -1,22 +1,5 @@
 #include "client.hpp"
 
-template <typename T>
-Result<T> as(Scalar&& v) {
-  if (auto* p = std::get_if<T>(&v)) {
-    return std::move(*p);
-  }
-  return std::unexpected("Unexpected value type");
-}
-
-template <typename T>
-Result<T> field(Item& item, std::string_view name) {
-  auto it = item.fields.find(std::string(name));
-  if (it == item.fields.end()) {
-    return std::unexpected(std::format("item '{}' has no field '{}'", item.key, name));
-  }
-  return as<T>(std::move(it->second));
-}
-
 Result<bool> Client::power() {
   return transport.get<NETREMOTE_SYS_POWER>()
     .transform([](auto v){return v != 0;});
@@ -50,24 +33,16 @@ Result<void> Client::mute(bool value) {
 
 Result<std::vector<Preset>> Client::presets() {
   auto nav = NavSession::open(transport);
-  if (!nav) {
-    return std::unexpected(std::move(nav.error()));
+  if (!nav) return std::unexpected(std::move(nav.error()));
+
+  std::vector<Preset> presets;
+  for (auto&& r: transport.list(NETREMOTE_NAV_PRESETS)) {
+    if (!r) return std::unexpected(std::move(r.error()));
+    ItemView<NETREMOTE_NAV_PRESETS> v{*r};
+    if (v.get<"name">().empty()) continue;
+    presets.push_back({r->key, v.get<"name">(), v.get<"type">(), v.get<"url">()});
   }
-  return transport.list_get_next(NETREMOTE_NAV_PRESETS)
-    .and_then([](List&& list) -> Result<std::vector<Preset>> {
-      std::vector<Preset> presets;
-      for (auto& item: list) {
-        auto name = field<std::string>(item, "name");
-        auto type = field<std::string>(item, "type");
-        auto url = field<std::string>(item, "url");
-        if (!name) return std::unexpected(std::move(name.error()));
-        if (!type) return std::unexpected(std::move(type.error()));
-        if (!url) return std::unexpected(std::move(url.error()));
-        if (name->empty()) continue;
-        presets.push_back({item.key, std::move(*name), std::move(*type), std::move(*url)});
-      }
-      return presets;
-    });
+  return presets;
 }
 
 Result<void> Client::play_preset(uint32_t value) {
@@ -79,37 +54,29 @@ Result<void> Client::play_preset(uint32_t value) {
 }
 
 Result<std::vector<EqPreset>> Client::eqPresets() {
-  return transport.list_get_next(NETREMOTE_SYS_CAPS_EQPRESETS)
-    .and_then([](List&& list) -> Result<std::vector<EqPreset>> {
-      std::vector<EqPreset> eqPresets;
-      for (auto& item: list) {
-        auto label = field<std::string>(item, "label");
-        if (!label) return std::unexpected(std::move(label.error()));
-        eqPresets.push_back({item.key, std::move(*label)});
-      }
-      return eqPresets;
+  std::vector<EqPreset> eqPresets;
+  for (auto&& r: transport.list(NETREMOTE_SYS_CAPS_EQPRESETS)) {
+    if (!r) return std::unexpected(std::move(r.error()));
+    Item& item = *r;
+    eqPresets.push_back({
+      item.key,
+      ItemView<NETREMOTE_SYS_CAPS_EQPRESETS>{item}.get<"label">()
     });
+  }
+  return eqPresets;
 }
 
 Result<std::vector<Mode>> Client::modes() {
-  return transport.list_get_next(NETREMOTE_SYS_CAPS_VALIDMODES)
-    .and_then([](List&& list) -> Result<std::vector<Mode>> {
-      std::vector<Mode> modes;
-      for (auto& item: list) {
-        auto id = field<std::string>(item, "id");
-        auto selectable = field<uint8_t>(item, "selectable");
-        auto label = field<std::string>(item, "label");
-        auto streamable = field<uint8_t>(item, "streamable");
-        auto modetype = field<uint8_t>(item, "modetype");
-        if (!id) return std::unexpected(std::move(id.error()));
-        if (!selectable) return std::unexpected(std::move(selectable.error()));
-        if (!label) return std::unexpected(std::move(label.error()));
-        if (!streamable) return std::unexpected(std::move(streamable.error()));
-        if (!modetype) return std::unexpected(std::move(modetype.error()));
-        modes.push_back({item.key, std::move(*id), std::move(*label), *modetype, *selectable == 1, *streamable == 1});
-      }
-      return modes;
+  std::vector<Mode> modes;
+  for (auto&& r: transport.list(NETREMOTE_SYS_CAPS_VALIDMODES)) {
+    if (!r) return std::unexpected(std::move(r.error()));
+    ItemView<NETREMOTE_SYS_CAPS_VALIDMODES> v{*r};
+    modes.push_back({
+      r->key, v.get<"id">(), v.get<"label">(), v.get<"modetype">(),
+      v.get<"streamable">() == 1, v.get<"selectable">() == 1
     });
+  }
+  return modes;
 }
 
 Result<uint32_t> Client::mode() {
@@ -122,27 +89,28 @@ Result<void> Client::mode(uint32_t value) {
 
 Result<Mode> Client::current_mode() {
   return mode().and_then([&](uint32_t cur) {
-      return modes().and_then([cur](std::vector<Mode>&& list) -> Result<Mode> {
-          auto it = std::ranges::find(list, cur, &Mode::slot);
-          if (it == list.end()) {
-            return std::unexpected(std::format("unknown mode '{}'", cur));
-          }
-          return std::move(*it);
+    return transport.list_get<NETREMOTE_SYS_CAPS_VALIDMODES>(cur)
+      .transform([](Item&& item) {
+        ItemView<NETREMOTE_SYS_CAPS_VALIDMODES> v{item};
+        return Mode{
+          item.key, v.get<"id">(), v.get<"label">(), v.get<"modetype">(),
+          v.get<"streamable">() == 1, v.get<"selectable">() == 1
+        };
       });
   });
 }
 
 Result<std::vector<Lang>> Client::langs() {
-  return transport.list_get_next(NETREMOTE_SYS_CAPS_VALIDLANG)
-    .and_then([](List&& list) -> Result<std::vector<Lang>> {
-      std::vector<Lang> langs;
-      for (auto& item: list) {
-        auto label = field<std::string>(item, "langlabel");
-        if (!label) return std::unexpected(std::move(label.error()));
-        langs.push_back({item.key, std::move(*label)});
-      }
-      return langs;
+  std::vector<Lang> langs;
+  for (auto&& r: transport.list(NETREMOTE_SYS_CAPS_VALIDLANG)) {
+    if (!r) return std::unexpected(std::move(r.error()));
+    Item& item = *r;
+    langs.push_back({
+      item.key,
+      ItemView<NETREMOTE_SYS_CAPS_VALIDLANG>{item}.get<"langlabel">()
     });
+  }
+  return langs;
 }
 
 Result<uint32_t> Client::lang() {
@@ -155,12 +123,12 @@ Result<void> Client::lang(uint32_t value) {
 
 Result<Lang> Client::current_lang() {
   return lang().and_then([&](uint32_t cur) {
-      return langs().and_then([cur](std::vector<Lang>&& list) -> Result<Lang> {
-          auto it = std::ranges::find(list, cur, &Lang::slot);
-          if (it == list.end()) {
-            return std::unexpected(std::format("unknown lang '{}'", cur));
-          }
-          return std::move(*it);
+      return transport.list_get<NETREMOTE_SYS_CAPS_VALIDLANG>(cur)
+      .transform([](Item&& item) {
+          return Lang{
+            item.key,
+            ItemView<NETREMOTE_SYS_CAPS_VALIDLANG>{item}.get<"langlabel">()
+          };
       });
   });
 }

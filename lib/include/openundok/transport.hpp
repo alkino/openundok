@@ -1,21 +1,13 @@
 #pragma once
 
 #include <format>
+#include <generator>
 #include <string>
 #include <variant>
 
 #include "http.hpp"
 #include "node.hpp"
 #include "parser.hpp"
-
-template <NodeType> struct cpp_type;
-template <> struct cpp_type<NodeType::U8> { using type = uint8_t; };
-template <> struct cpp_type<NodeType::U32> { using type = uint32_t; };
-template <> struct cpp_type<NodeType::S32> { using type = int32_t; };
-template <> struct cpp_type<NodeType::C8_ARRAY> { using type = std::string; };
-
-template <ScalarId id>
-using node_t = cpp_type<scalar_nodes[id].type>::type;
 
 class Transport {
   public:
@@ -42,11 +34,32 @@ class Transport {
         .transform_error([&](const std::string& err) { return std::format("Error with '{}': {}", node.name, err); });
     }
 
-    Result<List> list_get_next(ListId id, size_t length = 30, std::optional<uint32_t> start = {}) {
-      const auto& node = list_nodes.at(id);
-      return http.list_get_next(id, length, start)
+    std::generator<Result<Item>> list(ListId id, size_t page_size = 30) {
+      std::optional<uint32_t> after;
+      for (;;) {
+        auto page = list_get_next(id, page_size, after);
+        if (!page) {
+          co_yield std::unexpected(std::move(page.error()));
+          co_return;
+        }
+        for (Item& item: page->items) {
+          after = item.key;
+          co_yield std::move(item);
+        }
+        if (page->end || page->items.empty()) co_return;
+      }
+    }
+
+    template <ListId id>
+    Result<Item> list_get(uint32_t slot) {
+      constexpr const auto& node = list_nodes[id];
+      return http.list_get(id, slot)
         .and_then(Parser::load)
         .and_then([&](Parser&& p) { return p.parse_list(id); })
+        .and_then([](List&& l) -> Result<Item> {
+            if (l.size() != 1) return std::unexpected(std::format("expected 1 item, got {}", l.size()));
+            return std::move(l.front());
+          })
         .transform_error([&](const std::string& err) { return std::format("Error with '{}': {}", node.name, err); });
     }
 
@@ -58,6 +71,14 @@ class Transport {
 
   private:
     HTTP http;
+
+    Result<Page> list_get_next(ListId id, size_t length, std::optional<uint32_t> start) {
+      const auto& node = list_nodes[id];
+      return http.list_get_next(id, length, start)
+        .and_then(Parser::load)
+        .and_then([&](Parser&& p) { return p.parse_page(id); })
+        .transform_error([&](const std::string& err) { return std::format("Error with '{}': {}", node.name, err); });
+    }
 };
 
 // vim: set ts=2 sw=2 sts=2 et:
