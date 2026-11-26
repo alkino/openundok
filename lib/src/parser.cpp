@@ -1,9 +1,12 @@
 #include <charconv>
+#include <format>
 #include <utility>
 
 #include <pugixml.hpp>
 
 #include "parser.hpp"
+
+constexpr std::array<std::string_view, 4> xml_tag = {"u8", "u32", "s32", "c8_array"};
 
 struct Parser::Impl {
   pugi::xml_document doc;
@@ -113,7 +116,7 @@ struct Parser::Impl {
         continue;
       }
       std::string name = parse_node(res);
-      std::optional<ScalarNode> node = node_id_from_name(name);
+      std::optional<ScalarNode> node = scalar_from_name(name);
       if (!node) {
         continue;
       }
