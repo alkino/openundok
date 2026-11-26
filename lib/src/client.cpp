@@ -36,7 +36,7 @@ Result<std::vector<Preset>> Client::presets() {
   if (!nav) return std::unexpected(std::move(nav.error()));
 
   std::vector<Preset> presets;
-  for (auto&& r: transport.list(NETREMOTE_NAV_PRESETS)) {
+  for (auto&& r: transport.list<NETREMOTE_NAV_PRESETS>()) {
     if (!r) return std::unexpected(std::move(r.error()));
     ItemView<NETREMOTE_NAV_PRESETS> v{*r};
     if (v.get<"name">().empty()) continue;
@@ -55,7 +55,7 @@ Result<void> Client::play_preset(uint32_t value) {
 
 Result<std::vector<EqPreset>> Client::eqPresets() {
   std::vector<EqPreset> eqPresets;
-  for (auto&& r: transport.list(NETREMOTE_SYS_CAPS_EQPRESETS)) {
+  for (auto&& r: transport.list<NETREMOTE_SYS_CAPS_EQPRESETS>()) {
     if (!r) return std::unexpected(std::move(r.error()));
     Item& item = *r;
     eqPresets.push_back({
@@ -68,7 +68,7 @@ Result<std::vector<EqPreset>> Client::eqPresets() {
 
 Result<std::vector<Mode>> Client::modes() {
   std::vector<Mode> modes;
-  for (auto&& r: transport.list(NETREMOTE_SYS_CAPS_VALIDMODES)) {
+  for (auto&& r: transport.list<NETREMOTE_SYS_CAPS_VALIDMODES>()) {
     if (!r) return std::unexpected(std::move(r.error()));
     ItemView<NETREMOTE_SYS_CAPS_VALIDMODES> v{*r};
     modes.push_back({
@@ -102,7 +102,7 @@ Result<Mode> Client::current_mode() {
 
 Result<std::vector<Lang>> Client::langs() {
   std::vector<Lang> langs;
-  for (auto&& r: transport.list(NETREMOTE_SYS_CAPS_VALIDLANG)) {
+  for (auto&& r: transport.list<NETREMOTE_SYS_CAPS_VALIDLANG>()) {
     if (!r) return std::unexpected(std::move(r.error()));
     Item& item = *r;
     langs.push_back({

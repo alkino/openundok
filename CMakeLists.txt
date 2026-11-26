@@ -10,7 +10,8 @@ find_package(CLI11 REQUIRED)
 add_library(openundok
         lib/src/client.cpp
         lib/src/http.cpp
-        lib/src/parser.cpp)
+        lib/src/parser.cpp
+        lib/src/transport.cpp)
 
 target_include_directories(openundok
         PUBLIC
