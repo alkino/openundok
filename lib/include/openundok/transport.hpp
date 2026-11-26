@@ -3,6 +3,7 @@
 #include <format>
 #include <generator>
 #include <string>
+#include <tuple>
 #include <variant>
 
 #include "http.hpp"
@@ -25,10 +26,13 @@ class Transport {
     template <ListId id>
     Result<Item> list_get(uint32_t slot);
 
-    Result<MultipleScalar> get_multiple(std::span<const ScalarId> ids);
+    template <ScalarId... ids>
+    Result<std::tuple<Result<node_t<ids>>...>> get_multiple();
 
   private:
     HTTP http;
+
+    Result<std::vector<Result<Scalar>>> get_multiple(std::span<const ScalarId> ids);
 
     template <ListId id>
     Result<Page> list_get_next(size_t length, std::optional<uint32_t> start);
@@ -51,6 +55,19 @@ Result<void> Transport::set(const node_t<id>& v) {
     .and_then(Parser::load)
     .and_then([](Parser&& p) { return p.parse_set(); })
     .transform_error([&](const std::string& err) { return std::format("Error with '{}': {}", node.name, err); });
+}
+
+template <ScalarId... ids>
+Result<std::tuple<Result<node_t<ids>>...>> Transport::get_multiple() {
+  static constexpr ScalarId wanted[] = {ids...};
+  return get_multiple(wanted)
+    .transform([](std::vector<Result<Scalar>>&& values) {
+      return [&]<std::size_t... I>(std::index_sequence<I...>) {
+        return std::tuple{
+          std::move(values[I]).transform([](Scalar&& s) { return std::get<node_t<ids>>(std::move(s)); })...
+        };
+      }(std::make_index_sequence<sizeof...(ids)>{});
+  });
 }
 
 template <ListId id>

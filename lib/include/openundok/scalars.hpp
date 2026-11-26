@@ -57,16 +57,4 @@ static_assert(scalar_nodes.size() == SCALAR_COUNT);
 template <ScalarId id>
 using node_t = cpp_type<scalar_nodes[id].type>::type;
 
-constexpr std::optional<ScalarNode> scalar_from_name(std::string_view name) {
-  for (auto node: scalar_nodes) {
-    if (node.name == name) {
-      return node;
-    }
-  }
-  return std::nullopt;
-}
-
-// TODO: remove it when we type GET_MULTIPLE
-using MultipleScalar = std::unordered_map<std::string, Scalar>;
-
 // vim: set ts=2 sw=2 sts=2 et:

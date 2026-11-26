@@ -133,15 +133,21 @@ Result<Lang> Client::current_lang() {
   });
 }
 
-Result<MultipleScalar> Client::infos() {
-  static constexpr ScalarId ids[] = {
-    NETREMOTE_PLAY_INFO_ALBUM,
-    NETREMOTE_PLAY_INFO_ARTIST,
-    NETREMOTE_PLAY_INFO_DURATION,
-    NETREMOTE_PLAY_INFO_NAME,
-    NETREMOTE_PLAY_INFO_TEXT,
-  };
-  return transport.get_multiple(ids);
+Result<NowPlaying> Client::now_playing() {
+  return transport.get_multiple<NETREMOTE_PLAY_INFO_ALBUM, NETREMOTE_PLAY_INFO_ARTIST,
+          NETREMOTE_PLAY_INFO_DURATION, NETREMOTE_PLAY_INFO_NAME,
+          NETREMOTE_PLAY_INFO_TEXT, NETREMOTE_PLAY_POSITION>()
+    .transform([](auto&& t) {
+      auto& [album, artist, duration, name, text, position] = t;
+      return NowPlaying{
+        .name = name.value_or(""),
+        .artist = artist.value_or(""),
+        .album = album.value_or(""),
+        .text = text.value_or(""),
+        .duration = std::chrono::milliseconds(duration.value_or(0)),
+        .position = std::chrono::milliseconds(position.value_or(0)),
+      };
+    });
 }
 
 // vim: set ts=2 sw=2 sts=2 et:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -15,7 +16,7 @@ class Parser {
 
     Result<void> parse_set();
     Result<Scalar> parse_get(NodeType type);
-    Result<MultipleScalar> parse_multiple();
+    Result<std::vector<Result<Scalar>>> parse_multiple(std::span<const ScalarId> ids);
 
     Result<List> parse_list(ListId id);
     Result<Page> parse_page(ListId id);

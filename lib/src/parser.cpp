@@ -105,24 +105,25 @@ struct Parser::Impl {
     return items;
   }
 
-  Result<MultipleScalar> parse_multiple() {
-    MultipleScalar values{};
+  Result<std::vector<Result<Scalar>>> parse_multiple(std::span<const ScalarId> ids) {
     auto response = doc.child("fsapiGetMultipleResponse");
     if (response.empty()) {
       return std::unexpected("the XML node <fsapiGetMultipleResponse> has not been found");
     }
-    for (pugi::xml_node res = response.child("fsapiResponse"); res; res = res.next_sibling("fsapiResponse")) {
-      if (auto status = parse_status(res); !status) {
+    std::vector<Result<Scalar>> values;
+    values.reserve(ids.size());
+    for (ScalarId id: ids) {
+      const auto& node = scalar_nodes[id];
+      auto res = response.find_child([&](pugi::xml_node n) {
+        return std::string_view(n.name()) == "fsapiResponse" && n.child_value("node") == node.name;
+      });
+      if (res.empty()) {
+        values.push_back(std::unexpected(std::format("'{}' missing from the response", node.name)));
         continue;
       }
-      std::string name = parse_node(res);
-      std::optional<ScalarNode> node = scalar_from_name(name);
-      if (!node) {
-        continue;
-      }
-      auto value = parse_value(node->type, res);
-      if (!value) continue;
-      values.emplace(name, *value);
+      values.push_back(parse_status(res)
+          .and_then([&] { return parse_value(node.type, res); })
+          .transform_error([&](std::string&& err) { return std::format("Error with '{}': {}", node.name, err); }));
     }
     return values;
   }
@@ -199,8 +200,8 @@ Result<Page> Parser::parse_page(ListId id) {
   });
 }
 
-Result<MultipleScalar> Parser::parse_multiple() {
-  return impl_->parse_multiple();
+Result<std::vector<Result<Scalar>>> Parser::parse_multiple(std::span<const ScalarId> ids) {
+  return impl_->parse_multiple(ids);
 }
 
 // vim: set ts=2 sw=2 sts=2 et:

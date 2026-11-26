@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <utility>
 
@@ -10,6 +11,10 @@ struct EqPreset { uint32_t slot; std::string label; };
 struct Preset { uint32_t slot; std::string name, type, url; };
 struct Mode { uint32_t slot; std::string id, label; uint8_t modetype; bool streamable, selectable; };
 struct Lang { uint32_t slot; std::string label; };
+struct NowPlaying {
+  std::string name, artist, album, text;
+  std::chrono::milliseconds duration, position;
+};
 
 class NavSession {
   public:
@@ -70,7 +75,7 @@ class Client {
     Result<void> lang(uint32_t);
     Result<Lang> current_lang();
 
-    Result<MultipleScalar> infos();
+    Result<NowPlaying> now_playing();
 
   private:
     Transport transport;

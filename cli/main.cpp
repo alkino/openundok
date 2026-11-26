@@ -50,6 +50,8 @@ int main(int argc, char** argv) {
   auto* lang = app.add_subcommand("lang", "List current lang");
   lang->add_option("slot", lang_slot);
 
+  auto* now_playing = app.add_subcommand("now_playing", "Showing the current information");
+
   CLI11_PARSE(app, argc, argv);
 
   Client client(host);
@@ -148,6 +150,21 @@ int main(int argc, char** argv) {
       return report(r);
     }
     return report(client.lang(*lang_slot));
+  }
+
+  if (*now_playing) {
+    auto r = client.now_playing();
+    if (r) {
+      auto d = std::chrono::floor<std::chrono::seconds>(r->duration);
+      auto p = std::chrono::floor<std::chrono::seconds>(r->position);
+
+      std::println("Playing {} by {}", r->name, r->artist);
+      std::println("From the album {}", r->album);
+      if (d > std::chrono::hours{1}) std::println("Duration is {:%T} / {:%T}", p, d);
+      else std::println("Time {:%M:%S} / {:%M:%S}", p, d);
+      std::println("{}", r->text);
+    }
+    return report(r);
   }
 }
 
