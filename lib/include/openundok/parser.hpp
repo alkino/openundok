@@ -15,15 +15,12 @@ class Parser {
 
     Result<void> parse_set();
     Result<Scalar> parse_get(NodeType type);
-    Result<List> parse_list(NodeId id);
-    Result<MultipleValue> parse_multiple();
+    Result<List> parse_list(ListId id);
+    Result<MultipleScalar> parse_multiple();
 
   private:
     struct Impl;
     explicit Parser(std::unique_ptr<Impl> impl);
-
-    template <typename T>
-    Result<Value> parse_number(std::string_view text);
 
     std::unique_ptr<Impl> impl_;
 };

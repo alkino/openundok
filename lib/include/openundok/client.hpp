@@ -6,13 +6,15 @@
 #include "transport.hpp"
 #include "node.hpp"
 
+struct EqPreset { uint32_t slot; std::string label; };
 struct Preset { uint32_t slot; std::string name, type, url; };
 struct Mode { uint32_t slot; std::string id, label; uint8_t modetype; bool streamable, selectable; };
+struct Lang { uint32_t slot; std::string label; };
 
 class NavSession {
   public:
     static Result<NavSession> open(Transport& transport) {
-      return transport.set(NETREMOTE_NAV_STATE, "1")
+      return transport.set<NETREMOTE_NAV_STATE>(1)
         .transform([&] { return NavSession(transport); })
         .transform_error([](const std::string& err) { return std::format("Impossible to lock a nav session: {}", err); });
     }
@@ -26,7 +28,7 @@ class NavSession {
 
     ~NavSession() {
       if (transport_) {
-        (void)transport_->set(NETREMOTE_NAV_STATE, "0");
+        (void)transport_->set<NETREMOTE_NAV_STATE>(0);
       }
     }
 
@@ -38,17 +40,9 @@ class NavSession {
     Transport* transport_;
 };
 
-template <typename T>
-Result<T> as(Scalar&& v) {
-  if (auto* p = std::get_if<T>(&v)) {
-    return std::move(*p);
-  }
-  return std::unexpected("Unexpected value type");
-}
-
 class Client {
   public:
-    Client(const std::string& ip)
+    explicit Client(const std::string& ip)
       : transport(ip)
     {}
 
@@ -64,14 +58,19 @@ class Client {
     Result<std::vector<Preset>> presets();
     Result<void> play_preset(uint32_t value);
 
-    Result<ListList<std::string>> eqPresets();
+    Result<std::vector<EqPreset>> eqPresets();
 
     Result<std::vector<Mode>> modes();
     Result<uint32_t> mode();
     Result<void> mode(uint32_t);
     Result<Mode> current_mode();
 
-    Result<MultipleValue> infos();
+    Result<std::vector<Lang>> langs();
+    Result<uint32_t> lang();
+    Result<void> lang(uint32_t);
+    Result<Lang> current_lang();
+
+    Result<MultipleScalar> infos();
 
   private:
     Transport transport;

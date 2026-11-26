@@ -8,73 +8,52 @@
 #include "node.hpp"
 #include "parser.hpp"
 
+template <NodeType> struct cpp_type;
+template <> struct cpp_type<NodeType::U8> { using type = uint8_t; };
+template <> struct cpp_type<NodeType::U32> { using type = uint32_t; };
+template <> struct cpp_type<NodeType::S32> { using type = int32_t; };
+template <> struct cpp_type<NodeType::C8_ARRAY> { using type = std::string; };
+
+template <ScalarId id>
+using node_t = cpp_type<scalar_nodes[id].type>::type;
+
 class Transport {
   public:
-    Transport(const std::string& ip)
+    explicit Transport(const std::string& ip)
     : http(ip)
     {}
 
-    Result<Scalar> get(NodeId id) {
-      auto body = http.get(id);
-      if (!body) {
-        return std::unexpected(std::move(body.error()));
-      }
-
-      auto loaded = Parser::load(*body);
-      if (!loaded) {
-        return std::unexpected(std::move(loaded.error()));
-      }
-      Parser parser = std::move(*loaded);
-
-      const Node& node = nodes.at(id);
-      return parser.parse_get(node.type)
+    template <ScalarId id>
+    Result<node_t<id>> get() {
+      constexpr const auto& node = scalar_nodes[id];
+      return http.get(id)
+        .and_then(Parser::load)
+        .and_then([&](Parser&& p) { return p.parse_get(node.type); })
+        .transform([](Scalar&& v) { return std::get<node_t<id>>(std::move(v)); })
         .transform_error([&](const std::string& err) { return std::format("Error with '{}': {}", node.name, err); });
     }
 
-    Result<void> set(NodeId id, std::string v) {
-      auto body = http.set(id, v);
-      if (!body) {
-        return std::unexpected(std::move(body.error()));
-      }
-
-      auto loaded = Parser::load(*body);
-      if (!loaded) {
-        return std::unexpected(std::move(loaded.error()));
-      }
-      Parser parser = std::move(*loaded);
-
-      return parser.parse_set();
-    }
-
-    Result<List> list_get_next(NodeId id, size_t length = 30, ssize_t start = -1) {
-      auto body = http.list_get_next(id, length, start);
-      if (!body) {
-        return std::unexpected(std::move(body.error()));
-      }
-
-      auto loaded = Parser::load(*body);
-      if (!loaded) {
-        return std::unexpected(std::move(loaded.error()));
-      }
-      Parser parser = std::move(*loaded);
-
-      Node node = nodes.at(id);
-      return parser.parse_list(id)
+    template <ScalarId id>
+    Result<void> set(const node_t<id>& v) {
+      constexpr const auto& node = scalar_nodes[id];
+      return http.set(id, std::format("{}", v))
+        .and_then(Parser::load)
+        .and_then([](Parser&& p) { return p.parse_set(); })
         .transform_error([&](const std::string& err) { return std::format("Error with '{}': {}", node.name, err); });
     }
 
-    Result<MultipleValue> get_multiple(std::span<const NodeId> ids) {
-      auto body = http.get_multiple(ids);
-      if (!body) {
-        return std::unexpected(std::move(body.error()));
-      }
+    Result<List> list_get_next(ListId id, size_t length = 30, std::optional<uint32_t> start = {}) {
+      const auto& node = list_nodes.at(id);
+      return http.list_get_next(id, length, start)
+        .and_then(Parser::load)
+        .and_then([&](Parser&& p) { return p.parse_list(id); })
+        .transform_error([&](const std::string& err) { return std::format("Error with '{}': {}", node.name, err); });
+    }
 
-      auto loaded = Parser::load(*body);
-      if (!loaded) {
-        return std::unexpected(std::move(loaded.error()));
-      }
-      Parser parser = std::move(*loaded);
-      return parser.parse_multiple();
+    Result<MultipleScalar> get_multiple(std::span<const ScalarId> ids) {
+      return http.get_multiple(ids)
+        .and_then(Parser::load)
+        .and_then([](Parser&& p) { return p.parse_multiple(); });
     }
 
   private:

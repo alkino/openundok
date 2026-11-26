@@ -44,6 +44,12 @@ int main(int argc, char** argv) {
   auto* mute = app.add_subcommand("mute", "Enable or disable mute");
   mute->add_option("state", mute_arg)->check(CLI::IsMember({"on", "off", "toggle"}));
 
+  auto* langs = app.add_subcommand("langs", "List all available languages");
+
+  std::optional<uint32_t> lang_slot{};
+  auto* lang = app.add_subcommand("lang", "List current lang");
+  lang->add_option("slot", lang_slot);
+
   CLI11_PARSE(app, argc, argv);
 
   Client client(host);
@@ -127,6 +133,21 @@ int main(int argc, char** argv) {
       target = !*cur;
     }
     return report(client.mute(target));
+  }
+
+  if (*langs) {
+    auto r = client.langs();
+    if (r) for (auto& p: *r) std::println("[{}] {}", p.slot, p.label);
+    return report(r);
+  }
+
+  if (*lang) {
+    if (!lang_slot) {
+      auto r = client.current_lang();
+      if (r) std::println("{}", r->label);
+      return report(r);
+    }
+    return report(client.lang(*lang_slot));
   }
 }
 

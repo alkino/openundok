@@ -1,4 +1,5 @@
 #include <charconv>
+#include <utility>
 
 #include <pugixml.hpp>
 
@@ -27,38 +28,22 @@ struct Parser::Impl {
 
   Result<Scalar> parse_value(NodeType type, pugi::xml_node node) {
     auto child = node.child("value").first_child();
-    return parse_scalar<Scalar>(type, child);
+    return parse_scalar(type, child);
   }
 
   std::string parse_node(pugi::xml_node node) {
     return node.child_value("node");
   }
 
-  template <typename V>
-  Result<V> parse_scalar(NodeType type, pugi::xml_node node) {
+  Result<Scalar> parse_scalar(NodeType type, pugi::xml_node node) {
     const std::string_view name = node.name();
-    switch(type) {
-      case NodeType::U8:
-        if (name != "u8")
-          return std::unexpected(std::format("type is invalid should be 'u8' but is '{}'", name));
-        break;
-      case NodeType::U32:
-        if (name != "u32")
-          return std::unexpected(std::format("type is invalid should be 'u32' but is '{}'", name));
-        break;
-      case NodeType::S32:
-        if (name != "s32")
-          return std::unexpected(std::format("type is invalid should be 's32' but is '{}'", name));
-        break;
-      case NodeType::C8_ARRAY:
-        if (name != "c8_array")
-          return std::unexpected(std::format("type is invalid should be 'c8_array' but is '{}'", name));
-        break;
-      case NodeType::LIST:
-        return std::unexpected("found a NodeType::LIST when parsing a scalar");
+
+    const std::string_view expected = xml_tag[std::to_underlying(type)];
+    if (name != expected) {
+        return std::unexpected(std::format("type is invalid should be '{}' but is '{}'", expected, name));
     }
 
-    auto wrap = [](auto x){ return V{std::move(x)}; };
+    auto wrap = [](auto x){ return Scalar{std::move(x)}; };
 
     auto value = node.child_value();
 
@@ -66,12 +51,12 @@ struct Parser::Impl {
       case NodeType::U8: return parse_number<uint8_t>(value).transform(wrap);
       case NodeType::U32: return parse_number<uint32_t>(value).transform(wrap);
       case NodeType::S32: return parse_number<int32_t>(value).transform(wrap);
-      case NodeType::C8_ARRAY: return V{std::string(value)};
+      case NodeType::C8_ARRAY: return Scalar{std::string(value)};
     }
     return std::unexpected("the type is not supported");
   }
 
-  Result<std::pair<std::string, Scalar>> parse_field(pugi::xml_node field, const Node& node) {
+  Result<std::pair<std::string, Scalar>> parse_field(pugi::xml_node field, const ListNode& node) {
     std::string name = field.attribute("name").value();
 
     auto it = std::ranges::find(node.fields, name, &Field::name);
@@ -79,7 +64,7 @@ struct Parser::Impl {
       return std::unexpected(std::format("the field '{}' has not been found", name)); 
     }
 
-    auto value = parse_scalar<Scalar>(it->type, field.first_child());
+    auto value = parse_scalar(it->type, field.first_child());
     if (!value) {
       return std::unexpected(std::format("error with field '{}': {}", name, std::move(value.error())));
     }
@@ -87,7 +72,7 @@ struct Parser::Impl {
     return std::make_pair(std::move(name), std::move(*value));
   }
 
-  Result<Item> parse_item(pugi::xml_node item, const Node& node) {
+  Result<Item> parse_item(pugi::xml_node item, const ListNode& node) {
     uint32_t key = item.attribute("key").as_uint();
     std::unordered_map<std::string, Scalar> fields;
     for (pugi::xml_node field = item.child("field"); field; field = field.next_sibling("field")) {
@@ -97,11 +82,15 @@ struct Parser::Impl {
         return std::unexpected(std::move(res.error()));
       }
     }
-    return Item{key, fields};
+    if (fields.size() != node.fields.size()) {
+      return std::unexpected(std::format("item {}: expected {} fields, got {}",
+            key, node.fields.size(), fields.size()));
+    }
+    return Item{key, std::move(fields)};
   }
 
-  Result<List> parse_list(NodeId id, pugi::xml_node xml) {
-    const Node& node = nodes.at(id);
+  Result<List> parse_list(ListId id, pugi::xml_node xml) {
+    const auto& node = list_nodes.at(id);
     std::vector<Item> items{};
     for (pugi::xml_node item = xml.child("item"); item; item = item.next_sibling("item")) {
       if (auto res = parse_item(item, node); res) {
@@ -113,8 +102,8 @@ struct Parser::Impl {
     return items;
   }
 
-  Result<MultipleValue> parse_multiple() {
-    MultipleValue values{};
+  Result<MultipleScalar> parse_multiple() {
+    MultipleScalar values{};
     auto response = doc.child("fsapiGetMultipleResponse");
     if (response.empty()) {
       return std::unexpected("the XML node <fsapiGetMultipleResponse> has not been found");
@@ -124,7 +113,7 @@ struct Parser::Impl {
         continue;
       }
       std::string name = parse_node(res);
-      std::optional<Node> node = node_id_from_name(name);
+      std::optional<ScalarNode> node = node_id_from_name(name);
       if (!node) {
         continue;
       }
@@ -182,7 +171,7 @@ Result<Scalar> Parser::parse_get(NodeType type) {
     .and_then([&]{ return impl_->parse_value(type, response); });
 }
 
-Result<List> Parser::parse_list(NodeId id) {
+Result<List> Parser::parse_list(ListId id) {
   auto response = impl_->doc.child("fsapiResponse");
   if (response.empty()) {
     return std::unexpected("the XML node <fsapiResponse> has not been found");
@@ -191,7 +180,7 @@ Result<List> Parser::parse_list(NodeId id) {
     .and_then([&]{ return impl_->parse_list(id, response); });
 }
 
-Result<MultipleValue> Parser::parse_multiple() {
+Result<MultipleScalar> Parser::parse_multiple() {
   return impl_->parse_multiple();
 }
 

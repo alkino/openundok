@@ -13,7 +13,7 @@ struct HTTP::Impl {
   Result<std::string> get(std::string action, const std::vector<std::pair<std::string, std::string>>& values = {}) {
   httplib::Params final_params({{"pin", pin}});
   for (const auto& [k, v]: values) {
-    final_params.insert({k, v});
+    final_params.emplace(k, v);
   }
 
   if (auto res = cli.Get(action, final_params)) {
@@ -33,25 +33,25 @@ HTTP::HTTP(const std::string& ip)
 
 HTTP::~HTTP() = default;
 
-Result<std::string> HTTP::get(NodeId nodeId) {
-  const Node& node = nodes[nodeId];
+Result<std::string> HTTP::get(ScalarId nodeId) {
+  const auto& node = scalar_nodes[nodeId];
   return impl_->get(std::format("/fsapi/GET/{}", node.name));
 }
 
-Result<std::string> HTTP::set(NodeId nodeId, const std::string& value) {
-  const Node& node = nodes[nodeId];
+Result<std::string> HTTP::set(ScalarId nodeId, const std::string& value) {
+  const auto& node = scalar_nodes[nodeId];
   return impl_->get(std::format("/fsapi/SET/{}", node.name), {{"value", value}});
 }
 
-Result<std::string> HTTP::list_get_next(NodeId nodeId, size_t length, ssize_t start) {
-  const Node& node = nodes[nodeId];
-  return impl_->get(std::format("/fsapi/LIST_GET_NEXT/{}/{}", node.name, start), {{"maxItems", std::format("{}", length)}});
+Result<std::string> HTTP::list_get_next(ListId nodeId, size_t length, std::optional<uint32_t> start) {
+  const auto& node = list_nodes[nodeId];
+  return impl_->get(std::format("/fsapi/LIST_GET_NEXT/{}/{}", node.name, start ? std::format("{}", *start) : std::string("-1")), {{"maxItems", std::format("{}", length)}});
 }
 
-Result<std::string> HTTP::get_multiple(std::span<const NodeId> ids) {
+Result<std::string> HTTP::get_multiple(std::span<const ScalarId> ids) {
   std::vector<std::pair<std::string, std::string>> params{};
-  for (NodeId id: ids) {
-    const Node& node = nodes[id];
+  for (auto id: ids) {
+    const auto& node = scalar_nodes[id];
     params.emplace_back(std::make_pair("node", node.name));
   }
   return impl_->get("/fsapi/GET_MULTIPLE", params);

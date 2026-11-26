@@ -12,10 +12,10 @@ class HTTP {
     HTTP(const std::string& ip);
     ~HTTP();
 
-    Result<std::string> get(NodeId nodeId);
-    Result<std::string> set(NodeId nodeId, const std::string& value);
-    Result<std::string> list_get_next(NodeId nodeId, size_t length = 30, ssize_t start = -1);
-    Result<std::string> get_multiple(std::span<const NodeId> ids);
+    Result<std::string> get(ScalarId nodeId);
+    Result<std::string> set(ScalarId nodeId, const std::string& value);
+    Result<std::string> list_get_next(ListId nodeId, size_t length = 30, std::optional<uint32_t> start = {});
+    Result<std::string> get_multiple(std::span<const ScalarId> ids);
 
   private:
     struct Impl;

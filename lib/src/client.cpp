@@ -1,6 +1,14 @@
 #include "client.hpp"
 
 template <typename T>
+Result<T> as(Scalar&& v) {
+  if (auto* p = std::get_if<T>(&v)) {
+    return std::move(*p);
+  }
+  return std::unexpected("Unexpected value type");
+}
+
+template <typename T>
 Result<T> field(Item& item, std::string_view name) {
   auto it = item.fields.find(std::string(name));
   if (it == item.fields.end()) {
@@ -10,38 +18,34 @@ Result<T> field(Item& item, std::string_view name) {
 }
 
 Result<bool> Client::power() {
-  return transport.get(NETREMOTE_SYS_POWER)
-    .and_then([](Scalar&& v) { return as<uint8_t>(std::move(v)); })
-    .transform([](uint8_t v){return v != 0;});
+  return transport.get<NETREMOTE_SYS_POWER>()
+    .transform([](auto v){return v != 0;});
 }
 
 Result<void> Client::power(bool on) {
-  return transport.set(NETREMOTE_SYS_POWER, on ? "1" : "0");
+  return transport.set<NETREMOTE_SYS_POWER>(on);
 }
 
 Result<uint8_t> Client::volume() {
-  return transport.get(NETREMOTE_SYS_AUDIO_VOLUME)
-    .and_then([](Scalar&& v) { return as<uint8_t>(std::move(v)); });
+  return transport.get<NETREMOTE_SYS_AUDIO_VOLUME>();
 }
 
 Result<void> Client::volume(uint8_t value) {
-  return transport.set(NETREMOTE_SYS_AUDIO_VOLUME, std::format("{}", value));
+  return transport.set<NETREMOTE_SYS_AUDIO_VOLUME>(value);
 }
 
 Result<uint8_t> Client::volume_max() {
-  return transport.get(NETREMOTE_SYS_CAPS_VOLUMESTEPS)
-    .and_then([](Scalar&& v) { return as<uint8_t>(std::move(v)); })
-    .transform([](uint8_t v) { return v - 1;});
+  return transport.get<NETREMOTE_SYS_CAPS_VOLUMESTEPS>()
+    .transform([](auto v) { return v == 0 ? 0 : v - 1;});
 }
 
 Result<bool> Client::muted() {
-  return transport.get(NETREMOTE_SYS_AUDIO_MUTE)
-    .and_then([](Scalar&& v) { return as<uint8_t>(std::move(v)); })
-    .transform([](uint8_t v) { return v != 0; });
+  return transport.get<NETREMOTE_SYS_AUDIO_MUTE>()
+    .transform([](auto v) { return v != 0; });
 }
 
 Result<void> Client::mute(bool value) {
-  return transport.set(NETREMOTE_SYS_AUDIO_MUTE, value ? "1" : "0");
+  return transport.set<NETREMOTE_SYS_AUDIO_MUTE>(value);
 }
 
 Result<std::vector<Preset>> Client::presets() {
@@ -71,25 +75,19 @@ Result<void> Client::play_preset(uint32_t value) {
   if (!nav) {
     return std::unexpected(std::move(nav.error()));
   }
-  return transport.set(NETREMOTE_NAV_ACTION_SELECTPRESET, std::format("{}", value));
+  return transport.set<NETREMOTE_NAV_ACTION_SELECTPRESET>(value);
 }
 
-Result<ListList<std::string>> Client::eqPresets() {
+Result<std::vector<EqPreset>> Client::eqPresets() {
   return transport.list_get_next(NETREMOTE_SYS_CAPS_EQPRESETS)
-    .and_then([](List&& l) -> Result<ListList<std::string>> {
-      ListList<std::string> vec;
-      for (auto& [k, v]: l) {
-        auto it = v.find("label");
-        if (it == v.end()) {
-          return std::unexpected(std::format("eq preset '{}' has no 'label'", k));
-        }
-        auto label = as<std::string>(std::move(it->second));
-        if (!label) {
-          return std::unexpected(std::move(label.error()));
-        }
-        vec.emplace_back(k, std::move(*label));
+    .and_then([](List&& list) -> Result<std::vector<EqPreset>> {
+      std::vector<EqPreset> eqPresets;
+      for (auto& item: list) {
+        auto label = field<std::string>(item, "label");
+        if (!label) return std::unexpected(std::move(label.error()));
+        eqPresets.push_back({item.key, std::move(*label)});
       }
-      return vec;
+      return eqPresets;
     });
 }
 
@@ -115,12 +113,11 @@ Result<std::vector<Mode>> Client::modes() {
 }
 
 Result<uint32_t> Client::mode() {
-  return transport.get(NETREMOTE_SYS_MODE)
-    .and_then([](Scalar&& v) { return as<uint32_t>(std::move(v)); });
+  return transport.get<NETREMOTE_SYS_MODE>();
 }
 
 Result<void> Client::mode(uint32_t value) {
-  return transport.set(NETREMOTE_SYS_MODE, std::format("{}", value));
+  return transport.set<NETREMOTE_SYS_MODE>(value);
 }
 
 Result<Mode> Client::current_mode() {
@@ -135,8 +132,41 @@ Result<Mode> Client::current_mode() {
   });
 }
 
-Result<MultipleValue> Client::infos() {
-  static constexpr NodeId ids[] = {
+Result<std::vector<Lang>> Client::langs() {
+  return transport.list_get_next(NETREMOTE_SYS_CAPS_VALIDLANG)
+    .and_then([](List&& list) -> Result<std::vector<Lang>> {
+      std::vector<Lang> langs;
+      for (auto& item: list) {
+        auto label = field<std::string>(item, "langlabel");
+        if (!label) return std::unexpected(std::move(label.error()));
+        langs.push_back({item.key, std::move(*label)});
+      }
+      return langs;
+    });
+}
+
+Result<uint32_t> Client::lang() {
+  return transport.get<NETREMOTE_SYS_LANG>();
+}
+
+Result<void> Client::lang(uint32_t value) {
+  return transport.set<NETREMOTE_SYS_LANG>(value);
+}
+
+Result<Lang> Client::current_lang() {
+  return lang().and_then([&](uint32_t cur) {
+      return langs().and_then([cur](std::vector<Lang>&& list) -> Result<Lang> {
+          auto it = std::ranges::find(list, cur, &Lang::slot);
+          if (it == list.end()) {
+            return std::unexpected(std::format("unknown lang '{}'", cur));
+          }
+          return std::move(*it);
+      });
+  });
+}
+
+Result<MultipleScalar> Client::infos() {
+  static constexpr ScalarId ids[] = {
     NETREMOTE_PLAY_INFO_ALBUM,
     NETREMOTE_PLAY_INFO_ARTIST,
     NETREMOTE_PLAY_INFO_DURATION,
