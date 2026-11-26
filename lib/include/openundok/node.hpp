@@ -14,10 +14,6 @@
 
 /*
  * netRemote.sys.info.controllerName
- * netRemote.sys.mode
- * netRemote.sys.caps.validModes
- * netRemote.sys.caps.volumeSteps
- * netRemote.sys.audio.mute
  * netRemote.sys.irAutoPlayFlag
  * netRemote.sys.net.keepConnected
  * netRemote.nav.caps
@@ -57,8 +53,12 @@ enum NodeId {
   NETREMOTE_PLAY_INFO_TEXT,
   NETREMOTE_PLAY_POSITION,
   NETREMOTE_PLAY_SHUFFLESTATUS,
+  NETREMOTE_SYS_AUDIO_MUTE,
   NETREMOTE_SYS_AUDIO_VOLUME,
   NETREMOTE_SYS_CAPS_EQPRESETS,
+  NETREMOTE_SYS_CAPS_VALIDMODES,
+  NETREMOTE_SYS_CAPS_VOLUMESTEPS,
+  NETREMOTE_SYS_MODE,
   NETREMOTE_SYS_POWER,
   NODE_COUNT,
 };
@@ -71,6 +71,14 @@ constexpr std::array<Field, 3> presets_fields = {{
 
 constexpr std::array<Field, 1> eqpresets_fields = {{
   {"label", NodeType::C8_ARRAY},
+}};
+
+constexpr std::array<Field, 5> validmodes_fields = {{
+  {"id", NodeType::C8_ARRAY},
+  {"selectable", NodeType::U8},
+  {"label", NodeType::C8_ARRAY},
+  {"streamable", NodeType::U8},
+  {"modetype", NodeType::U8},
 }};
 
 constexpr auto nodes =
@@ -86,8 +94,12 @@ constexpr auto nodes =
     {"netRemote.play.info.text", NodeType::C8_ARRAY},
     {"netRemote.play.position", NodeType::U32},
     {"netRemote.play.shuffleStatus", NodeType::U8},
+    {"netRemote.sys.audio.mute", NodeType::U8},
     {"netRemote.sys.audio.volume", NodeType::U8},
     {"netRemote.sys.caps.eqPresets", NodeType::LIST, eqpresets_fields},
+    {"netRemote.sys.caps.validModes", NodeType::LIST, validmodes_fields},
+    {"netRemote.sys.caps.volumeSteps", NodeType::U8},
+    {"netRemote.sys.mode", NodeType::U32},
     {"netRemote.sys.power", NodeType::U8},
   });
 static_assert(nodes.size() == NODE_COUNT);

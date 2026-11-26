@@ -6,6 +6,9 @@
 #include "transport.hpp"
 #include "node.hpp"
 
+struct Preset { uint32_t slot; std::string name, type, url; };
+struct Mode { uint32_t slot; std::string id, label; uint8_t modetype; bool streamable, selectable; };
+
 class NavSession {
   public:
     static Result<NavSession> open(Transport& transport) {
@@ -35,13 +38,6 @@ class NavSession {
     Transport* transport_;
 };
 
-struct Preset {
-  uint32_t key;
-  std::string name;
-  std::string type;
-  std::string url;
-};
-
 template <typename T>
 Result<T> as(Scalar&& v) {
   if (auto* p = std::get_if<T>(&v)) {
@@ -56,75 +52,26 @@ class Client {
       : transport(ip)
     {}
 
-    Result<bool> is_on() {
-      return transport.get(NETREMOTE_SYS_POWER)
-        .and_then([](Scalar&& v) { return as<uint8_t>(std::move(v)); })
-        .transform([](uint8_t v){return v != 0;});
-    }
+    Result<bool> power();
+    Result<void> power(bool on);
 
-    Result<void> power(bool on) {
-      return transport.set(NETREMOTE_SYS_POWER, on ? "1" : "0");
-    }
+    Result<uint8_t> volume();
+    Result<void> volume(uint8_t value);
+    Result<uint8_t> volume_max();
+    Result<bool> muted();
+    Result<void> mute(bool value);
 
-    Result<uint8_t> volume() {
-      return transport.get(NETREMOTE_SYS_AUDIO_VOLUME)
-        .and_then([](Scalar&& v) { return as<uint8_t>(std::move(v)); });
-    }
+    Result<std::vector<Preset>> presets();
+    Result<void> play_preset(uint32_t value);
 
-    Result<void> volume(uint8_t value) {
-      return transport.set(NETREMOTE_SYS_AUDIO_VOLUME, std::format("{}", value));
-    }
+    Result<ListList<std::string>> eqPresets();
 
-    Result<std::string> artist() {
-      return transport.get(NETREMOTE_PLAY_INFO_ARTIST)
-        .and_then([](Scalar&& v) { return as<std::string>(std::move(v)); });
-    }
+    Result<std::vector<Mode>> modes();
+    Result<uint32_t> mode();
+    Result<void> mode(uint32_t);
+    Result<Mode> current_mode();
 
-    Result<List> presets() {
-      auto nav = NavSession::open(transport);
-      if (!nav) {
-        return std::unexpected(std::move(nav.error()));
-      }
-      return transport.list_get_next(NETREMOTE_NAV_PRESETS);
-    }
-
-    Result<void> select_preset(uint8_t value) {
-      auto nav = NavSession::open(transport);
-      if (!nav) {
-        return std::unexpected(std::move(nav.error()));
-      }
-      return transport.set(NETREMOTE_NAV_ACTION_SELECTPRESET, std::format("{}", value));
-    }
-
-    Result<ListList<std::string>> eqPresets() {
-      return transport.list_get_next(NETREMOTE_SYS_CAPS_EQPRESETS)
-        .and_then([](List&& l) -> Result<ListList<std::string>> {
-            ListList<std::string> vec;
-            for (auto& [k, v]: l) {
-              auto it = v.find("label");
-              if (it == v.end()) {
-                return std::unexpected(std::format("eq preset '{}' has no 'label'", k));
-              }
-              auto label = as<std::string>(std::move(it->second));
-              if (!label) {
-                return std::unexpected(std::move(label.error()));
-              }
-              vec.emplace_back(k, std::move(*label));
-            }
-          return vec;
-        });
-    }
-
-    Result<MultipleValue> infos() {
-      static constexpr NodeId ids[] = {
-        NETREMOTE_PLAY_INFO_ALBUM,
-        NETREMOTE_PLAY_INFO_ARTIST,
-        NETREMOTE_PLAY_INFO_DURATION,
-        NETREMOTE_PLAY_INFO_NAME,
-        NETREMOTE_PLAY_INFO_TEXT,
-      };
-      return transport.get_multiple(ids);
-    }
+    Result<MultipleValue> infos();
 
   private:
     Transport transport;
