@@ -11,12 +11,48 @@ int report(const Result<T>& r) {
   return 0;
 }
 
+using Action = std::function<int(Client&)>;
+
+template <typename T>
+void add_choice(CLI::App& app, Action& action,
+    const std::string& plural, const std::string& single,
+    Result<std::vector<T>> (Client::*list)(),
+    Result<T>              (Client::*current)(),
+    Result<void>           (Client::*select)(uint32_t)) {
+  app.add_subcommand(plural, "List available " + plural)->callback([&action, list] {
+    action = [list](Client& c) {
+      auto r = (c.*list)();
+      if (r) for (auto& x: *r) std::println("[{}] {}", x.slot, x.label);
+      return report(r);
+    };
+  });
+
+  auto slot = std::make_shared<std::optional<uint32_t>>();
+  auto* sub = app.add_subcommand(single, "Get/Set current " + single);
+  sub->add_option("slot", *slot);
+  sub->callback([&action, slot, current, select] {
+    action = [slot, current, select](Client& c) {
+      if (!*slot) {
+        auto r = (c.*current)();
+        if (r) std::println("{}", r->label);
+        return report(r);
+      }
+      return report((c.*select)(**slot));
+    };
+  });
+}
+
 int main(int argc, char** argv) {
   CLI::App app{"Control Frontier Silicon / UNDOK devices"};
   app.require_subcommand(1);
 
   std::string host;
   app.add_option("--host", host, "Decive IP");
+
+  Action action;
+  add_choice(app, action, "langs", "lang", &Client::langs, &Client::current_lang, &Client::lang);
+  add_choice(app, action, "modes", "mode", &Client::modes, &Client::current_mode, &Client::mode);
+  add_choice(app, action, "eq_presets", "eq_preset", &Client::eq_presets, &Client::current_eq_preset, &Client::eq_preset);
 
   std::optional<std::string> power_arg;
   auto* power = app.add_subcommand("power", "Get/Set power");
@@ -32,29 +68,19 @@ int main(int argc, char** argv) {
   auto* play = app.add_subcommand("play", "Play a preset");
   play->add_option("slot", slot)->required();
 
-  auto* modes = app.add_subcommand("modes", "List available modes");
-
-  std::optional<uint32_t> mode_slot{};
-  auto* mode = app.add_subcommand("mode", "List current mode");
-  mode->add_option("slot", mode_slot);
-
   auto* muted = app.add_subcommand("muted", "Is it muted");
 
   std::optional<std::string> mute_arg;
   auto* mute = app.add_subcommand("mute", "Enable or disable mute");
   mute->add_option("state", mute_arg)->check(CLI::IsMember({"on", "off", "toggle"}));
 
-  auto* langs = app.add_subcommand("langs", "List all available languages");
-
-  std::optional<uint32_t> lang_slot{};
-  auto* lang = app.add_subcommand("lang", "List current lang");
-  lang->add_option("slot", lang_slot);
-
   auto* now_playing = app.add_subcommand("now_playing", "Showing the current information");
 
   CLI11_PARSE(app, argc, argv);
 
   Client client(host);
+
+  if (action) return action(client);
 
   if (*power) {
     if (!power_arg) {
@@ -101,21 +127,6 @@ int main(int argc, char** argv) {
 
   if (*play) return report(client.play_preset(slot));
 
-  if (*modes) {
-    auto r = client.modes();
-    if (r) for (auto& p: *r) std::println("[{}] {}", p.slot, p.label);
-    return report(r);
-  }
-
-  if (*mode) {
-    if (!mode_slot) {
-      auto r = client.current_mode();
-      if (r) std::println("{}", r->label);
-      return report(r);
-    }
-    return report(client.mode(*mode_slot));
-  }
-
   if (*muted) {
     auto r = client.muted();
     if (r) std::println("{}", *r);
@@ -135,21 +146,6 @@ int main(int argc, char** argv) {
       target = !*cur;
     }
     return report(client.mute(target));
-  }
-
-  if (*langs) {
-    auto r = client.langs();
-    if (r) for (auto& p: *r) std::println("[{}] {}", p.slot, p.label);
-    return report(r);
-  }
-
-  if (*lang) {
-    if (!lang_slot) {
-      auto r = client.current_lang();
-      if (r) std::println("{}", r->label);
-      return report(r);
-    }
-    return report(client.lang(*lang_slot));
   }
 
   if (*now_playing) {

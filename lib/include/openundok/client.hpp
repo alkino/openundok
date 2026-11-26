@@ -63,7 +63,10 @@ class Client {
     Result<std::vector<Preset>> presets();
     Result<void> play_preset(uint32_t value);
 
-    Result<std::vector<EqPreset>> eqPresets();
+    Result<std::vector<EqPreset>> eq_presets();
+    Result<uint8_t> eq_preset();
+    Result<void> eq_preset(uint32_t slot);
+    Result<EqPreset> current_eq_preset();
 
     Result<std::vector<Mode>> modes();
     Result<uint32_t> mode();
@@ -79,6 +82,16 @@ class Client {
 
   private:
     Transport transport;
+
+    template <typename T>
+    Result<std::vector<T>> all();
+
+    template <typename T>
+    Result<T> current();
+
+    // TODO: change this uint32_t to something more dynamic because some slots are u8
+    template <typename T>
+    Result<void> select(uint32_t slot);
 };
 
 // vim: set ts=2 sw=2 sts=2 et:

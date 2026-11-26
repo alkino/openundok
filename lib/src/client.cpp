@@ -1,5 +1,94 @@
 #include "client.hpp"
 
+#include <concepts>
+
+namespace {
+  template <typename T> struct choice;
+
+  template <typename T> struct choice;
+
+  template <typename T>
+  concept Choice = requires(const Item& item) {
+    { choice<T>::current }   -> std::convertible_to<ScalarId>;
+    { choice<T>::list }      -> std::convertible_to<ListId>;
+    { choice<T>::from(item) } -> std::same_as<T>;
+    requires std::unsigned_integral<node_t<choice<T>::current>>;
+    requires std::same_as<decltype(T::slot), uint32_t>;
+  };
+
+  template <> struct choice<Mode> {
+    static constexpr ScalarId current = NETREMOTE_SYS_MODE;
+    static constexpr ListId   list    = NETREMOTE_SYS_CAPS_VALIDMODES;
+
+    static Mode from(const Item& item) {
+      ItemView<list> v{item};
+      return {
+        .slot = item.key,
+        .id = v.get<"id">(),
+        .label = v.get<"label">(),
+        .modetype = v.get<"modetype">(),
+        .streamable = v.get<"streamable">() != 0,
+        .selectable = v.get<"selectable">() != 0,
+      };
+    }
+  };
+  static_assert(Choice<Mode>);
+
+  template <> struct choice<Lang> {
+    static constexpr ScalarId current = NETREMOTE_SYS_LANG;
+    static constexpr ListId list = NETREMOTE_SYS_CAPS_VALIDLANG;
+
+    static Lang from(const Item& item) {
+      ItemView<list> v{item};
+      return {
+        .slot = item.key,
+        .label = v.get<"langlabel">(),
+      };
+    }
+  };
+  static_assert(Choice<Lang>);
+
+  template <> struct choice<EqPreset> {
+    static constexpr ScalarId current = NETREMOTE_SYS_AUDIO_EQPRESET;
+    static constexpr ListId list = NETREMOTE_SYS_CAPS_EQPRESETS;
+
+    static EqPreset from(const Item& item) {
+      ItemView<list> v{item};
+      return {
+        .slot = item.key,
+        .label = v.get<"label">(),
+      };
+    }
+  };
+  static_assert(Choice<EqPreset>);
+}
+
+template <typename T>
+Result<std::vector<T>> Client::all() {
+  std::vector<T> vec;
+  for (auto&& r: transport.list<choice<T>::list>()) {
+    if (!r) return std::unexpected(std::move(r.error()));
+    vec.push_back(choice<T>::from(*r));
+  }
+  return vec;
+}
+
+template <typename T>
+Result<T> Client::current() {
+  return transport.get<choice<T>::current>()
+    .and_then([&](uint32_t cur) {
+      return transport.list_get<choice<T>::list>(cur)
+        .transform([](Item&& item) {
+          return choice<T>::from(item);
+        });
+    });
+}
+
+template <typename T>
+Result<void> Client::select(uint32_t slot) {
+  return transport.set<choice<T>::current>(slot);
+}
+
 Result<bool> Client::power() {
   return transport.get<NETREMOTE_SYS_POWER>()
     .transform([](auto v){return v != 0;});
@@ -53,30 +142,24 @@ Result<void> Client::play_preset(uint32_t value) {
   return transport.set<NETREMOTE_NAV_ACTION_SELECTPRESET>(value);
 }
 
-Result<std::vector<EqPreset>> Client::eqPresets() {
-  std::vector<EqPreset> eqPresets;
-  for (auto&& r: transport.list<NETREMOTE_SYS_CAPS_EQPRESETS>()) {
-    if (!r) return std::unexpected(std::move(r.error()));
-    Item& item = *r;
-    eqPresets.push_back({
-      item.key,
-      ItemView<NETREMOTE_SYS_CAPS_EQPRESETS>{item}.get<"label">()
-    });
-  }
-  return eqPresets;
+Result<std::vector<EqPreset>> Client::eq_presets() {
+  return all<EqPreset>();
+}
+
+Result<uint8_t> Client::eq_preset() {
+  return transport.get<NETREMOTE_SYS_AUDIO_EQPRESET>();
+}
+
+Result<void> Client::eq_preset(uint32_t slot) {
+  return select<EqPreset>(slot);
+}
+
+Result<EqPreset> Client::current_eq_preset() {
+  return current<EqPreset>();
 }
 
 Result<std::vector<Mode>> Client::modes() {
-  std::vector<Mode> modes;
-  for (auto&& r: transport.list<NETREMOTE_SYS_CAPS_VALIDMODES>()) {
-    if (!r) return std::unexpected(std::move(r.error()));
-    ItemView<NETREMOTE_SYS_CAPS_VALIDMODES> v{*r};
-    modes.push_back({
-      r->key, v.get<"id">(), v.get<"label">(), v.get<"modetype">(),
-      v.get<"streamable">() == 1, v.get<"selectable">() == 1
-    });
-  }
-  return modes;
+  return all<Mode>();
 }
 
 Result<uint32_t> Client::mode() {
@@ -84,33 +167,15 @@ Result<uint32_t> Client::mode() {
 }
 
 Result<void> Client::mode(uint32_t value) {
-  return transport.set<NETREMOTE_SYS_MODE>(value);
+  return select<Mode>(value);
 }
 
 Result<Mode> Client::current_mode() {
-  return mode().and_then([&](uint32_t cur) {
-    return transport.list_get<NETREMOTE_SYS_CAPS_VALIDMODES>(cur)
-      .transform([](Item&& item) {
-        ItemView<NETREMOTE_SYS_CAPS_VALIDMODES> v{item};
-        return Mode{
-          item.key, v.get<"id">(), v.get<"label">(), v.get<"modetype">(),
-          v.get<"streamable">() == 1, v.get<"selectable">() == 1
-        };
-      });
-  });
+  return current<Mode>();
 }
 
 Result<std::vector<Lang>> Client::langs() {
-  std::vector<Lang> langs;
-  for (auto&& r: transport.list<NETREMOTE_SYS_CAPS_VALIDLANG>()) {
-    if (!r) return std::unexpected(std::move(r.error()));
-    Item& item = *r;
-    langs.push_back({
-      item.key,
-      ItemView<NETREMOTE_SYS_CAPS_VALIDLANG>{item}.get<"langlabel">()
-    });
-  }
-  return langs;
+  return all<Lang>();
 }
 
 Result<uint32_t> Client::lang() {
@@ -118,19 +183,11 @@ Result<uint32_t> Client::lang() {
 }
 
 Result<void> Client::lang(uint32_t value) {
-  return transport.set<NETREMOTE_SYS_LANG>(value);
+  return select<Lang>(value);
 }
 
 Result<Lang> Client::current_lang() {
-  return lang().and_then([&](uint32_t cur) {
-      return transport.list_get<NETREMOTE_SYS_CAPS_VALIDLANG>(cur)
-      .transform([](Item&& item) {
-          return Lang{
-            item.key,
-            ItemView<NETREMOTE_SYS_CAPS_VALIDLANG>{item}.get<"langlabel">()
-          };
-      });
-  });
+  return current<Lang>();
 }
 
 Result<NowPlaying> Client::now_playing() {
